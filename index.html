@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Profile Share Recency</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* Layout idea: a worklist. Four band counters on top act as filters, then one dense table sorted longest-waiting first. */
+:root {
+  --bg: #f3f5f8;
+  --surface: #ffffff;
+  --ink: #18212f;
+  --muted: #5d6b80;
+  --line: #dde3ec;
+  --accent: #2f55d4;
+  --good: #1f8a57;   --good-bg: #e2f4ea;
+  --warn: #a8660a;   --warn-bg: #fbeed3;
+  --crit: #c0362c;   --crit-bg: #fbe3e0;
+  --idle: #5d6b80;   --idle-bg: #e8ecf2;
+  --font-display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #10151d; --surface: #18202b; --ink: #e8edf5; --muted: #96a3b8; --line: #2a3443;
+    --accent: #8aa4ff;
+    --good: #5fd39a; --good-bg: #153326;
+    --warn: #f0b757; --warn-bg: #3a2b0f;
+    --crit: #ff8a80; --crit-bg: #401a17;
+    --idle: #96a3b8; --idle-bg: #242e3c;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #10151d; --surface: #18202b; --ink: #e8edf5; --muted: #96a3b8; --line: #2a3443;
+  --accent: #8aa4ff;
+  --good: #5fd39a; --good-bg: #153326;
+  --warn: #f0b757; --warn-bg: #3a2b0f;
+  --crit: #ff8a80; --crit-bg: #401a17;
+  --idle: #96a3b8; --idle-bg: #242e3c;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 14px; line-height: 1.45; }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 20px 16px 48px; display: flex; flex-direction: column; gap: 16px; }
+header { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: flex-end; justify-content: space-between; }
+h1 { font-family: var(--font-display); font-size: 26px; line-height: 1.1; margin: 0; text-wrap: balance; }
+.sub { color: var(--muted); margin: 4px 0 0; max-width: 65ch; }
+.headside { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.fresh { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+button, select, input { font: inherit; color: inherit; }
+.btn { background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: 8px 14px; font-weight: 600; cursor: pointer; }
+:root[data-theme="dark"] .btn { color: #10151d; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .btn { color: #10151d; } }
+.btn:disabled { opacity: .55; cursor: default; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.bands { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.band { text-align: left; background: var(--surface); border: 1px solid var(--line); border-left: 5px solid var(--c); border-radius: 10px; padding: 10px 12px; cursor: pointer; display: flex; flex-direction: column; gap: 2px; }
+.band[aria-pressed="true"] { background: var(--cbg); border-color: var(--c); }
+.band .n { font-family: var(--font-display); font-size: 28px; line-height: 1; font-variant-numeric: tabular-nums; }
+.band .l { color: var(--muted); font-size: 13px; }
+.b-never, .b-red { --c: var(--crit); --cbg: var(--crit-bg); }
+.b-amber { --c: var(--warn); --cbg: var(--warn-bg); }
+.b-green { --c: var(--good); --cbg: var(--good-bg); }
+.b-fix { --c: var(--idle); --cbg: var(--idle-bg); }
+
+.seg { display: flex; flex-wrap: wrap; gap: 8px; }
+.seg button { display: inline-flex; align-items: center; gap: 7px; background: var(--surface); border: 1.5px solid var(--line); border-radius: 999px; padding: 7px 16px; font-weight: 500; cursor: pointer; color: var(--ink); }
+.seg button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+:root[data-theme="dark"] .seg button[aria-pressed="true"] { color: #10151d; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .seg button[aria-pressed="true"] { color: #10151d; } }
+.seg svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.seg .c { opacity: .75; font-variant-numeric: tabular-nums; }
+.filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.filters label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted); }
+.filters input, .filters select { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; min-width: 150px; color: var(--ink); }
+.count { margin-left: auto; color: var(--muted); font-size: 13px; align-self: flex-end; font-variant-numeric: tabular-nums; }
+.linkbtn { background: none; border: 0; color: var(--accent); cursor: pointer; padding: 0; text-decoration: underline; align-self: flex-end; }
+
+.notice { background: var(--warn-bg); color: var(--ink); border: 1px solid var(--warn); border-radius: 10px; padding: 12px 14px; }
+.notice strong { display: block; }
+.notice[hidden] { display: none; }
+
+.tablebox { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; min-width: 1020px; }
+th, td { padding: 9px 12px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: top; }
+tr:last-child td { border-bottom: 0; }
+th { font-size: 12px; font-weight: 600; color: var(--muted); white-space: nowrap; background: var(--surface); position: sticky; top: 0; }
+th button { background: none; border: 0; padding: 0; font-weight: 600; color: inherit; cursor: pointer; }
+th button[data-dir]::after { content: " ▾"; }
+th button[data-dir="asc"]::after { content: " ▴"; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.name { font-weight: 600; }
+.meta { color: var(--muted); font-size: 12px; }
+.tag { display: inline-block; font-size: 11px; font-weight: 600; border-radius: 5px; padding: 1px 6px; background: var(--idle-bg); color: var(--idle); margin-left: 6px; vertical-align: 1px; }
+.pill { display: inline-block; min-width: 76px; text-align: center; font-weight: 600; border-radius: 999px; padding: 3px 10px; background: var(--cbg); color: var(--c); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pill.b-load { --c: var(--muted); --cbg: transparent; font-weight: 400; }
+a { color: var(--accent); }
+.empty { padding: 28px 16px; text-align: center; color: var(--muted); }
+footer { color: var(--muted); font-size: 12px; max-width: 80ch; }
+@media (prefers-reduced-motion: no-preference) { .pill.b-load { animation: pulse 1.4s ease-in-out infinite; } @keyframes pulse { 50% { opacity: .45; } } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Profile Share Recency</h1>
+      <p class="sub">Probation and Active Pool students, longest wait first. Student list from V2, updated every evening. Share dates and company counts come from each student's tracker.</p>
+    </div>
+    <div class="headside">
+      <span class="fresh" id="fresh">Loading…</span>
+      <button class="btn" id="refresh" type="button">Re-read trackers</button>
+    </div>
+  </header>
+
+  <div class="notice" id="notice" hidden></div>
+
+  <div class="seg" id="seg" role="group" aria-label="Stage">
+    <button type="button" data-stage="" aria-pressed="true"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="7" cy="8" r="3"/><circle cx="14" cy="9" r="2.4"/><path d="M1.5 17c.6-3 2.8-4.5 5.5-4.5s4.9 1.5 5.5 4.5M12.5 13c2.8-.6 5.2.7 6 3.5"/></svg>All <span class="c" id="c-all"></span></button>
+    <button type="button" data-stage="Probation" aria-pressed="false"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3 18 17H2Z"/><path d="M10 8.5v4M10 14.7v.2"/></svg>Probation <span class="c" id="c-prob"></span></button>
+    <button type="button" data-stage="Active Pool" aria-pressed="false"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="6.5" width="15" height="10.5" rx="1.5"/><path d="M7 6.5V4h6v2.5"/></svg>Active Pool <span class="c" id="c-pool"></span></button>
+  </div>
+
+  <div class="bands" id="bands">
+    <button type="button" class="band b-never" data-band="never" aria-pressed="false"><span class="n" id="n-never">–</span><span class="l">Never shared</span></button>
+    <button type="button" class="band b-red" data-band="red" aria-pressed="false"><span class="n" id="n-red">–</span><span class="l">15+ days ago</span></button>
+    <button type="button" class="band b-amber" data-band="amber" aria-pressed="false"><span class="n" id="n-amber">–</span><span class="l">8–14 days ago</span></button>
+    <button type="button" class="band b-green" data-band="green" aria-pressed="false"><span class="n" id="n-green">–</span><span class="l">Last 7 days</span></button>
+    <button type="button" class="band b-fix" data-band="fix" aria-pressed="false"><span class="n" id="n-fix">–</span><span class="l">Tracker needs fixing</span></button>
+  </div>
+
+  <div class="filters">
+    <label for="q">Search<input id="q" type="search" placeholder="Name or batch"></label>
+    <label for="domain">Domain<select id="domain"><option value="">All domains</option></select></label>
+    <button type="button" class="linkbtn" id="clear">Clear filters</button>
+    <span class="count" id="count"></span>
+  </div>
+
+  <div class="tablebox">
+    <table>
+      <thead><tr>
+        <th><button type="button" data-sort="name">Student</button></th>
+        <th><button type="button" data-sort="stage">Stage</button></th>
+        <th><button type="button" data-sort="domain">Domain</button></th>
+        <th><button type="button" data-sort="days" data-dir="desc">Days since last share</button></th>
+        <th>Last shared</th>
+        <th class="num"><button type="button" data-sort="month" id="th-month">This month</button></th>
+        <th class="num"><button type="button" data-sort="total">All time</button></th>
+        <th class="num"><button type="button" data-sort="toi">Days after TOI</button></th>
+        <th class="num"><button type="button" data-sort="pool">Days in Active Pool</button></th>
+        <th>Tracker</th>
+      </tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <div class="empty" id="empty" hidden></div>
+  </div>
+
+  <footer>
+    This month and All time count different companies in the tracker; a company listed twice counts once. A row with a company but no readable date counts in All time only. Students on hold, placed or exited are left out. Days after TOI and Days in Active Pool come from V2 and are as of the last evening update; Days in Active Pool counts from the student's latest move into the Active Pool.
+  </footer>
+</div>
+
+<script>
+/* ===== PURE-START ===== */
+var MONTHS = { jan:1, feb:2, mar:3, apr:4, may:5, jun:6, jul:7, aug:8, sep:9, sept:9, oct:10, nov:11, dec:12 };
+
+function mkDate(y, m, d) {
+  y = +y; m = +m; d = +d;
+  if (y < 100) y += 2000;
+  if (!(y >= 2015 && y <= 2100) || m < 1 || m > 12 || d < 1 || d > 31) return null;
+  var dt = new Date(y, m - 1, d);
+  if (dt.getMonth() !== m - 1 || dt.getDate() !== d) return null;
+  return dt;
+}
+
+/* Returns {date} when certain, {dmy, mdy} when day and month could be either way round, or null. */
+function parseDateCell(raw) {
+  var s = String(raw == null ? "" : raw).trim();
+  if (!s) return null;
+  var m;
+  m = s.match(/^(\d{1,2})(?:st|nd|rd|th)?[\s\/\-.,]+([A-Za-z]{3,9})\.?[\s\/\-.,]+(\d{2,4})$/);
+  if (m) { var mo = MONTHS[m[2].toLowerCase().slice(0, 3)] || MONTHS[m[2].toLowerCase()]; var d1 = mo && mkDate(m[3], mo, m[1]); return d1 ? { date: d1 } : null; }
+  m = s.match(/^([A-Za-z]{3,9})\.?[\s\/\-.,]+(\d{1,2})(?:st|nd|rd|th)?[\s\/\-.,]+(\d{2,4})$/);
+  if (m) { var mo2 = MONTHS[m[1].toLowerCase().slice(0, 3)]; var d2 = mo2 && mkDate(m[3], mo2, m[2]); return d2 ? { date: d2 } : null; }
+  m = s.match(/^(\d{4})[\/\-.]+(\d{1,2})[\/\-.]+(\d{1,2})/);
+  if (m) { var d3 = mkDate(m[1], m[2], m[3]); return d3 ? { date: d3 } : null; }
+  m = s.match(/^(\d{1,2})[\/\-.]+(\d{1,2})[\/\-.]+(\d{2,4})$/);
+  if (m) {
+    var a = +m[1], b = +m[2];
+    var dmy = mkDate(m[3], b, a), mdy = mkDate(m[3], a, b);
+    if (dmy && !mdy) return { date: dmy };
+    if (mdy && !dmy) return { date: mdy };
+    if (!dmy && !mdy) return null;
+    if (a === b) return { date: dmy };
+    /* typed with a leading zero or dashes: day first. Bare 4/10/2026 with slashes: Sheets' US format. */
+    var unpadded = s.indexOf("/") >= 0 && (m[1].length === 1 || m[2].length === 1);
+    return { dmy: dmy, mdy: mdy, prefer: unpadded ? "mdy" : "dmy" };
+  }
+  return null;
+}
+
+function normCompany(s) { return String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, ""); }
+
+/* values: rows of the tracker tab. today: Date at local midnight. */
+function summariseTracker(values, today) {
+  var out = { ok: true, last: null, lastCompany: "", month: 0, total: 0, dateIssues: 0, rows: 0 };
+  if (!values || !values.length) return out;
+  var hdr = -1, cDate = 0, cComp = 1;
+  for (var i = 0; i < Math.min(values.length, 5); i++) {
+    var r = (values[i] || []).map(function (c) { return String(c || "").toLowerCase(); });
+    var ci = -1, di = -1;
+    r.forEach(function (c, j) { if (ci < 0 && c.indexOf("company") >= 0) ci = j; if (di < 0 && c.indexOf("date") >= 0 && c.indexOf("update") < 0 && c.indexOf("interview") < 0) di = j; });
+    if (ci >= 0) { hdr = i; cComp = ci; cDate = di >= 0 ? di : 0; break; }
+  }
+  if (hdr < 0) { out.ok = false; out.problem = "No Company Name header found"; return out; }
+  var entries = [];
+  for (var k = hdr + 1; k < values.length; k++) {
+    var row = values[k] || [];
+    var comp = String(row[cComp] == null ? "" : row[cComp]).trim();
+    if (!comp) continue;
+    entries.push({ comp: comp, key: normCompany(comp) || comp.toLowerCase(), raw: row[cDate], p: parseDateCell(row[cDate]), date: null });
+  }
+  var tomorrow = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+  entries.forEach(function (e) { if (e.p && e.p.date) e.date = e.p.date; });
+  entries.forEach(function (e, idx) {
+    if (!e.p || e.p.date) return;
+    var near = null;
+    for (var off = 1; off < entries.length && !near; off++) {
+      var p1 = entries[idx - off], n1 = entries[idx + off];
+      if (p1 && p1.p && p1.p.date) near = p1.p.date; else if (n1 && n1.p && n1.p.date) near = n1.p.date;
+    }
+    var dF = e.p.dmy > tomorrow, mF = e.p.mdy > tomorrow;
+    if (dF !== mF) e.date = dF ? e.p.mdy : e.p.dmy;
+    else if (near && e.p.prefer === "mdy") e.date = Math.abs(e.p.dmy - near) <= Math.abs(e.p.mdy - near) ? e.p.dmy : e.p.mdy;
+    else e.date = e.p[e.p.prefer];
+  });
+  var all = {}, mon = {};
+  entries.forEach(function (e) {
+    all[e.key] = 1;
+    if (!e.date || e.date > tomorrow) { e.date = null; out.dateIssues++; return; }
+    if (e.date.getFullYear() === today.getFullYear() && e.date.getMonth() === today.getMonth()) mon[e.key] = 1;
+    if (!out.last || e.date >= out.last) { out.last = e.date; out.lastCompany = e.comp; }
+  });
+  out.rows = entries.length;
+  out.total = Object.keys(all).length;
+  out.month = Object.keys(mon).length;
+  return out;
+}
+
+function daysBetween(a, b) { return Math.round((Date.UTC(b.getFullYear(), b.getMonth(), b.getDate()) - Date.UTC(a.getFullYear(), a.getMonth(), a.getDate())) / 86400000); }
+
+function parseMarkdownTable(text) {
+  var lines = String(text || "").split(/\r?\n/).filter(function (l) { return /^\s*\|/.test(l); });
+  if (lines.length < 2) return [];
+  var cells = function (l) { return l.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map(function (c) { return c.trim(); }); };
+  var head = cells(lines[0]);
+  return lines.slice(2).map(function (l) {
+    var c = cells(l), o = {};
+    head.forEach(function (h, i) { o[h] = (c[i] === "_null_" || c[i] === undefined) ? "" : c[i]; });
+    return o;
+  });
+}
+
+function shortDomain(d) { return String(d || "").replace(/^(web|mobile|game)\s+development\s+using\s+/i, "").replace(/\s+stack$/i, "").trim() || "—"; }
+/* ===== PURE-END ===== */
+
+(function () {
+  var MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  var students = [], loading = true, listAt = "", readAt = 0, failed = "";
+  var view = { band: "", q: "", stage: "", domain: "", sort: "days", dir: "desc" };
+  var $ = function (id) { return document.getElementById(id); };
+  var today = function () { var n = new Date(); return new Date(n.getFullYear(), n.getMonth(), n.getDate()); };
+  var fmtDate = function (d) { return d.getDate() + " " + MONTH_NAMES[d.getMonth()] + " " + d.getFullYear(); };
+  var fmtTime = function (t) { var d = new Date(t); if (isNaN(d)) return ""; return d.getDate() + " " + MONTH_NAMES[d.getMonth()] + ", " + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); };
+  function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+  function showNotice(title, body) { var n = $("notice"); n.textContent = ""; if (!title) { n.hidden = true; return; } n.appendChild(el("strong", "", title)); n.appendChild(document.createTextNode(body || "")); n.hidden = false; }
+  function num(x) { return x === "" || x == null || isNaN(+x) ? null : +x; }
+
+  function apply(json) {
+    var data = JSON.parse(json), t0 = today();
+    listAt = data.listAt || "";
+    var listDay = new Date(listAt), extra = isNaN(listDay) ? 0 : Math.max(0, daysBetween(listDay, t0));
+    var oldest = 0;
+    students = (data.students || []).map(function (r) {
+      var toi = num(r.toi_days), pool = num(r.pool_days);
+      var s = { name: r.name, batch: r.batch, domain: shortDomain(r.domain), stage: r.stage, sheetId: r.sheet_id, state: "load",
+        toi: toi == null ? null : toi + extra, pool: pool == null || r.stage !== "Active Pool" ? null : pool + extra };
+      var t = data.trackers && data.trackers[r.sheet_id];
+      if (!r.sheet_id) { s.state = "fix"; s.problem = "No tracker link in V2"; }
+      else if (!t || (!t.at && !t.err)) { s.state = "load"; }
+      else if (t.err) { s.state = "fix"; s.problem = t.err; }
+      else { s.state = "ok"; s.sum = summariseTracker([["Applied Date", "Company Name"]].concat(t.rows || []), t0); }
+      if (t && t.at) { var ms = +new Date(t.at); if (ms && (!oldest || ms < oldest)) oldest = ms; }
+      return s;
+    });
+    readAt = oldest; loading = false; failed = "";
+    if (!students.length) showNotice("No students yet.", "The evening update has not filled the student list. It runs every day at about 8:30 pm.");
+    else showNotice();
+    fillDomains(); render();
+  }
+
+  var API = "https://script.google.com/macros/s/AKfycbyu4daWKmncMZoAOKy3fZbX2RUXPbLrSzylK0LiWzJQT0Z8cdcpX9D_-a-EvCQ-6dJ9/exec";
+  /* credentials "omit": the request carries no Google login, so several signed-in accounts cannot break it. */
+  function callApi(name) {
+    return fetch(API + "?api=" + name + "&t=" + Date.now(), { credentials: "omit", redirect: "follow", cache: "no-store" })
+      .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.text(); });
+  }
+
+  function load() {
+    loading = true; render();
+    callApi("data").then(function (text) {
+      if (text.trim().charAt(0) !== "{") throw new Error("The data source did not return data");
+      apply(text);
+    }).catch(function (e) {
+      loading = false; failed = String(e && e.message || e);
+      showNotice("Could not load the data.", "Reload the page to try again. (" + failed.slice(0, 160) + ")"); render();
+    });
+  }
+
+  function bandOf(s) {
+    if (s.state === "fix") return "fix";
+    if (s.state !== "ok") return "load";
+    if (!s.sum.last) return "never";
+    var d = daysBetween(s.sum.last, today());
+    return d >= 15 ? "red" : d >= 8 ? "amber" : "green";
+  }
+  function daysOf(s) { return s.state === "ok" && s.sum.last ? Math.max(0, daysBetween(s.sum.last, today())) : null; }
+
+  function fillDomains() {
+    var sel = $("domain"), cur = sel.value, seen = {};
+    students.forEach(function (s) { seen[s.domain] = 1; });
+    sel.textContent = ""; var o = el("option", "", "All domains"); o.value = ""; sel.appendChild(o);
+    Object.keys(seen).sort().forEach(function (d) { sel.appendChild(el("option", "", d)); });
+    sel.value = seen[cur] ? cur : ""; view.domain = sel.value;
+  }
+
+  function sortVal(s, key) {
+    if (key === "days") { var b = bandOf(s); return b === "never" ? 1e9 : b === "load" ? -1 : b === "fix" ? -2 : daysOf(s); }
+    if (key === "month") return s.state === "ok" ? s.sum.month : -1;
+    if (key === "total") return s.state === "ok" ? s.sum.total : -1;
+    if (key === "toi" || key === "pool") return s[key] == null ? -1 : s[key];
+    return String(s[key] || "").toLowerCase();
+  }
+
+  function render() {
+    var counts = { never: 0, red: 0, amber: 0, green: 0, fix: 0, load: 0 };
+    var scope = students.filter(function (s) {
+      if (view.stage && s.stage !== view.stage) return false;
+      if (view.domain && s.domain !== view.domain) return false;
+      if (view.q && (s.name + " " + s.batch).toLowerCase().indexOf(view.q) < 0) return false;
+      return true;
+    });
+    scope.forEach(function (s) { counts[bandOf(s)]++; });
+    ["never","red","amber","green","fix"].forEach(function (b) { $("n-" + b).textContent = students.length ? counts[b] : "–"; });
+    document.querySelectorAll("#seg button").forEach(function (b) { b.setAttribute("aria-pressed", String(b.dataset.stage === view.stage)); });
+    $("c-all").textContent = students.length || "";
+    $("c-prob").textContent = students.length ? students.filter(function (s) { return s.stage === "Probation"; }).length : "";
+    $("c-pool").textContent = students.length ? students.filter(function (s) { return s.stage === "Active Pool"; }).length : "";
+    document.querySelectorAll(".band").forEach(function (b) { b.setAttribute("aria-pressed", String(b.dataset.band === view.band)); });
+    $("th-month").textContent = MONTH_NAMES[new Date().getMonth()] + " companies";
+
+    var shown = scope.filter(function (s) { return !view.band || bandOf(s) === view.band; });
+    var dir = view.dir === "asc" ? 1 : -1;
+    shown.sort(function (a, b) {
+      var x = sortVal(a, view.sort), y = sortVal(b, view.sort);
+      if (x < y) return -dir; if (x > y) return dir;
+      return a.name.toLowerCase() < b.name.toLowerCase() ? -1 : 1;
+    });
+
+    var tb = $("rows"); tb.textContent = "";
+    shown.forEach(function (s) {
+      var tr = el("tr"), b = bandOf(s), td;
+      td = el("td"); td.appendChild(el("span", "name", s.name)); td.appendChild(el("div", "meta", s.batch)); tr.appendChild(td);
+      tr.appendChild(el("td", "", s.stage));
+      tr.appendChild(el("td", "", s.domain));
+      td = el("td");
+      var label = b === "load" ? "Not read yet" : b === "fix" ? "Check tracker" : b === "never" ? "Never" : (function (d) { return d === 0 ? "Today" : d + (d === 1 ? " day" : " days"); })(daysOf(s));
+      td.appendChild(el("span", "pill b-" + (b === "load" ? "fix" : b), label)); tr.appendChild(td);
+      td = el("td");
+      if (b === "fix") td.appendChild(el("span", "meta", s.problem));
+      else if (b === "load") td.appendChild(el("span", "meta", "Will be read within the hour"));
+      else if (b === "never") td.appendChild(el("span", "meta", s.sum.rows ? "No readable share date" : "No companies in tracker yet"));
+      else { td.appendChild(document.createTextNode(fmtDate(s.sum.last))); td.appendChild(el("div", "meta", s.sum.lastCompany)); }
+      if (s.state === "ok" && s.sum.dateIssues) td.appendChild(el("div", "meta", s.sum.dateIssues + (s.sum.dateIssues === 1 ? " row has" : " rows have") + " no readable date"));
+      tr.appendChild(td);
+      tr.appendChild(el("td", "num", s.state === "ok" ? String(s.sum.month) : "–"));
+      tr.appendChild(el("td", "num", s.state === "ok" ? String(s.sum.total) : "–"));
+      tr.appendChild(el("td", "num", s.toi == null ? "–" : String(s.toi)));
+      tr.appendChild(el("td", "num", s.pool == null ? "–" : String(s.pool)));
+      td = el("td");
+      if (s.sheetId) { var a = el("a", "", "Open"); a.href = "https://docs.google.com/spreadsheets/d/" + s.sheetId + "/edit"; a.target = "_blank"; a.rel = "noopener"; td.appendChild(a); } else td.appendChild(el("span", "meta", "No link"));
+      tr.appendChild(td);
+      tb.appendChild(tr);
+    });
+
+    var empty = $("empty");
+    if (!shown.length) { empty.hidden = false; empty.textContent = loading ? "Loading…" : !students.length ? "No students loaded." : "No students match these filters."; }
+    else empty.hidden = true;
+    $("count").textContent = students.length ? shown.length + " of " + students.length + " students" : "";
+    var parts = [];
+    if (listAt && fmtTime(listAt)) parts.push("Student list " + fmtTime(listAt));
+    if (readAt) parts.push("trackers read " + fmtTime(readAt));
+    $("fresh").textContent = loading ? "Loading…" : parts.join(" · ");
+    document.querySelectorAll("th button[data-sort]").forEach(function (btn) { if (btn.dataset.sort === view.sort) btn.dataset.dir = view.dir; else delete btn.dataset.dir; });
+  }
+
+  $("bands").addEventListener("click", function (e) { var b = e.target.closest(".band"); if (!b) return; view.band = view.band === b.dataset.band ? "" : b.dataset.band; render(); });
+  $("seg").addEventListener("click", function (e) { var b = e.target.closest("button"); if (!b) return; view.stage = b.dataset.stage; render(); });
+  $("q").addEventListener("input", function (e) { view.q = e.target.value.trim().toLowerCase(); render(); });
+  $("domain").addEventListener("change", function (e) { view.domain = e.target.value; render(); });
+  $("clear").addEventListener("click", function () { view.band = ""; view.q = ""; view.stage = ""; view.domain = ""; $("q").value = ""; $("domain").value = ""; render(); });
+  document.querySelector("thead").addEventListener("click", function (e) {
+    var b = e.target.closest("button[data-sort]"); if (!b) return;
+    if (view.sort === b.dataset.sort) view.dir = view.dir === "asc" ? "desc" : "asc";
+    else { view.sort = b.dataset.sort; view.dir = (view.sort === "name" || view.sort === "stage" || view.sort === "domain") ? "asc" : "desc"; }
+    render();
+  });
+  $("refresh").addEventListener("click", function () {
+    var btn = $("refresh"); btn.disabled = true; $("fresh").textContent = "Re-reading every tracker. This takes a couple of minutes…";
+    callApi("refresh").then(function (text) {
+      var r = ""; try { r = JSON.parse(text).result; } catch (e) { r = ""; }
+      btn.disabled = false;
+      load();
+      if (r === "recent") setTimeout(function () { showNotice("Trackers were read less than 15 minutes ago.", "The numbers shown are already current."); }, 1500);
+      if (r === "busy") setTimeout(function () { showNotice("A read is already running.", "Reload the page in a couple of minutes."); }, 1500);
+    }).catch(function (e) { btn.disabled = false; showNotice("Could not re-read the trackers.", "Try again in a few minutes."); render(); });
+  });
+
+  render(); load();
+})();
+</script>
+</body>
+</html>
